@@ -209,7 +209,12 @@ func GeneratePassword(length int) (string, error) {
 
 // Automatically detects if the cluster the operator running on is OpenShift
 func IsOpenshift() (bool, error) {
-	restConfig := ctrl.GetConfigOrDie()
+	restConfig, err := ctrl.GetConfig()
+	if err != nil {
+		// If we can't get cluster config (e.g., during unit tests), assume not OpenShift
+		return false, nil
+	}
+	
 	dcl, err := discovery.NewDiscoveryClientForConfig(restConfig)
 	if err != nil {
 		return false, err
