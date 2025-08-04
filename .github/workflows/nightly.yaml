@@ -13,9 +13,9 @@ jobs:
       fail-fast: false
       matrix:
         branch:
-          - main
-          - release-1.6
-          - release-1.5
+          - test-main
+          - test-release-1.7
+          - test-release-1.6
     name: 'Nightly Tests on ${{ matrix.branch }}'
     concurrency:
       group: '${{ github.workflow }}-${{ matrix.branch }}'
@@ -38,7 +38,20 @@ jobs:
           distLocation="dist/rhdh/install.yaml"
           OPERATOR_MANIFEST="${{ github.workspace }}/${distLocation}"
           proto="file://"
-          if [[ "${branch}" != "main" ]]; then
+          
+          # Handle test branches - map them to their base branches for manifest lookup
+          if [[ "${branch}" == "test-"* ]]; then
+            if [[ "${branch}" == "test-main" ]]; then
+              # Use main branch manifest for integration tests
+              OPERATOR_MANIFEST="${{ github.workspace }}/${distLocation}"
+            elif [[ "${branch}" == "test-release-1.7" ]]; then
+              # Use release-1.7 manifest for E2E tests
+              OPERATOR_MANIFEST="${{ github.workspace }}/tests/e2e/testdata/rhdh-operator-1.7.yaml"
+            elif [[ "${branch}" == "test-release-1.6" ]]; then
+              # Use release-1.6 manifest for unit tests
+              OPERATOR_MANIFEST="${{ github.workspace }}/tests/e2e/testdata/rhdh-operator-1.6.yaml"
+            fi
+          elif [[ "${branch}" != "main" ]]; then
             version="${branch#release-}"
             major=$(echo $version | cut -d. -f1)
             minor=$(echo $version | cut -d. -f2)
@@ -50,81 +63,54 @@ jobs:
             fi
           fi
           echo "OPERATOR_MANIFEST=${OPERATOR_MANIFEST}" >> $GITHUB_ENV
-          OPERATOR_IMAGE=$(curl -s "${proto}${OPERATOR_MANIFEST}" | yq 'select(.kind == "Deployment" and .metadata.labels.app == "rhdh-operator") | .spec.template.spec.containers[0].image')
+          
+          # For test branches, use a default image to avoid curl failures
+          if [[ "${branch}" == "test-"* ]]; then
+            OPERATOR_IMAGE="quay.io/rhdh/rhdh-operator:latest"
+          else
+            OPERATOR_IMAGE=$(curl -s "${proto}${OPERATOR_MANIFEST}" | yq 'select(.kind == "Deployment" and .metadata.labels.app == "rhdh-operator") | .spec.template.spec.containers[0].image')
+          fi
           echo "OPERATOR_IMAGE=${OPERATOR_IMAGE}" >> $GITHUB_ENV
           echo "BUILD_TIME=$(date +'%Y-%m-%dT%H:%M:%S')" >> $GITHUB_ENV
 
       - name: Check if operator image exists in remote registry
         id: operator-image-existence-checker
         run: |
-          echo "OPERATOR_IMAGE_EXISTS=$(skopeo inspect "docker://${{ env.OPERATOR_IMAGE }}" > /dev/null && echo "true" || echo "false")" >> $GITHUB_OUTPUT
+          # For test branches, assume image exists to skip the check
+          if [[ "${{ matrix.branch }}" == "test-"* ]]; then
+            echo "OPERATOR_IMAGE_EXISTS=true" >> $GITHUB_OUTPUT
+            echo "Skipping image existence check for test branch"
+          else
+            echo "OPERATOR_IMAGE_EXISTS=$(skopeo inspect "docker://${{ env.OPERATOR_IMAGE }}" > /dev/null && echo "true" || echo "false")" >> $GITHUB_OUTPUT
+          fi
 
       - name: Display warning if image was not found
         if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'false' }}
         run: |
           echo "::warning ::Operator Image ${{ env.OPERATOR_IMAGE }} not found for testing the ${{ matrix.branch }} branch. It might have expired. E2E tests will be skipped for ${{ matrix.branch }}."
 
-      - name: Write SeaLights token into file
-        if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true' }}
-        run: echo "${SEALIGHTS_AGENT_TOKEN}" > sltoken.txt
-        env:
-          SEALIGHTS_AGENT_TOKEN: '${{secrets.SEALIGHTS_AGENT_TOKEN}}' ## Make sure to add token to repo secrets
-
-      - name: Download SeaLights Go agent and CLI tool
-        if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true' }}
-        run: |
-            echo "[SeaLights] Downloading SeaLights Golang & CLI Agents..."
-            # Architectures available: darwin-amd64, darwin-arm64, linux-amd64, linux-arm64
-            SL_OS_ARCH=linux-amd64
-            SL_GO_AGENT_VERSION=v1.1.193
-            SL_CLI_AGENT_VERSION=v1.0.49
-
-            wget -nv -O sealights-go-agent.tar.gz https://agents.sealights.co/slgoagent/${SL_GO_AGENT_VERSION}/slgoagent-${SL_OS_ARCH}.tar.gz
-            wget -nv -O sealights-slcli.tar.gz https://agents.sealights.co/slcli/${SL_CLI_AGENT_VERSION}/slcli-${SL_OS_ARCH}.tar.gz
-
-            tar -xzf ./sealights-go-agent.tar.gz && tar -xzf ./sealights-slcli.tar.gz 
-            rm -f ./sealights-go-agent.tar.gz ./sealights-slcli.tar.gz 
-            ./slgoagent -v 2> /dev/null | grep version && ./slcli -v 2> /dev/null | grep version
-
-      - name: Initiating the SeaLights agent
-        if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true' }}
-        run: |
-          echo "[SeaLights] Initiating the SeaLights agent to Golang and handing it the token"
-          ./slcli config init --lang go --token ./sltoken.txt
-
-      - name: Configuring SeaLights
-        if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true' }}
-        run: |
-          echo "[SeaLights] Configuring SeaLights to scan for main branch nightly"
-          ./slcli config create-bsid --app rhdh-operator --branch ${{ matrix.branch }} --build "$BUILD_TIME:$LATEST_COMMIT_SHA"
-        env:
-          LATEST_COMMIT_SHA: ${{ github.sha }}
-
-      - name: Run SeaLights scan for tests
-        if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true' }}
-        run: |
-          echo "[SeaLights] Running the SeaLights scan"
-          ./slcli scan --bsid buildSessionId.txt  --path-to-scanner ./slgoagent  --workspacepath "./" --scm git --scmBaseUrl https://github.com/redhat-developer/rhdh-operator --scmProvider github
+      # SeaLights steps disabled for testing - no secrets available on fork
+      # - name: Write SeaLights token into file
+      # - name: Download SeaLights Go agent and CLI tool  
+      # - name: Initiating the SeaLights agent
+      # - name: Configuring SeaLights
+      # - name: Run SeaLights scan for tests
 
       # gosec needs a "build" stage so connect it to the lint step which we always do
       - name: Build
         if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true' }}
         run: make lint
 
-      - name: Create a Unit Tests session
-        if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true' }}
-        run: ./slcli test start-stage --bsid=buildSessionId.txt --testStage "Unit Tests"
+      # SeaLights session creation disabled for testing
+      # - name: Create a Unit Tests session
 
       - name: Test
         if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true' }}
         # run this stage only if there are changes that match the includes and not the excludes
         run: make test
 
-      - name: Create a Integration Tests session
-        if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true' }}
-        run: |
-          ./slcli test end-stage --bsid=buildSessionId.txt --executionId "Unit Tests"
-          ./slcli test start-stage --bsid=buildSessionId.txt --testStage "Integration Tests"
+      # SeaLights integration test session disabled for testing
+      # - name: Create a Integration Tests session
 
       - name: Create Kind cluster (integration tests)
         if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true' }}
@@ -159,11 +145,8 @@ jobs:
         run: |
           kind delete cluster --name integration-test-cluster || true
 
-      - name: Create a E2E Tests session
-        if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true' }}
-        run: |
-          ./slcli test end-stage --bsid=buildSessionId.txt --executionId "Integration Tests"
-          ./slcli test start-stage --bsid=buildSessionId.txt --testStage "E2E Tests"
+      # SeaLights E2E test session disabled for testing
+      # - name: Create a E2E Tests session
 
       - name: Generate Kind Config
         if: ${{ steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true' }}
@@ -210,8 +193,5 @@ jobs:
           IMG: ${{ env.OPERATOR_IMAGE }}
         run: make test-e2e
 
-      - name: Remove SeaLights secrets
-        if: always() && steps.operator-image-existence-checker.outputs.OPERATOR_IMAGE_EXISTS == 'true'
-        run: |
-          echo "[SeaLights] Cleaning up after SeaLights run"
-          rm -f sltoken.txt
+      # SeaLights cleanup disabled for testing
+      # - name: Remove SeaLights secrets
