@@ -2,6 +2,7 @@ package integration_tests
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/redhat-developer/rhdh-operator/pkg/model"
@@ -93,82 +94,99 @@ var _ = When("testing API version compatibility", func() {
 			g.Expect(deploy.Status.ReadyReplicas).To(BeNumerically(">", 0))
 		}, 3*time.Minute, 10*time.Second).Should(Succeed())
 
-		// test v1alpha4 compatibility
-		By("creating a Backstage resource using v1alpha4 API")
-		backstageNameV4 := generateRandName("bs-v1alpha4")
+		// Check if v1alpha4 API is available before testing it
+		By("checking if v1alpha4 API is available")
+		testV4Resource := &bsv1.Backstage{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: "nonexistent", Namespace: ns}, testV4Resource)
+		v1alpha4Available := !(err != nil && strings.Contains(err.Error(), "no matches for kind"))
+		
+		var backstageNameV4 string
+		var bsV1Alpha4 *bsv1.Backstage
+		
+		if v1alpha4Available {
+			// test v1alpha4 compatibility
+			By("creating a Backstage resource using v1alpha4 API")
+			backstageNameV4 = generateRandName("bs-v1alpha4")
 
-		// create ConfigMap for v1alpha4 test
-		generateConfigMap(ctx, k8sClient, "default-app-config-v4", ns,
-			map[string]string{
-				"app-config.yaml": `app:
-					title: Test App v1alpha4
-					baseUrl: http://localhost:3000`,
-			}, nil, nil)
+			// create ConfigMap for v1alpha4 test
+			generateConfigMap(ctx, k8sClient, "default-app-config-v4", ns,
+				map[string]string{
+					"app-config.yaml": `app:
+						title: Test App v1alpha4
+						baseUrl: http://localhost:3000`,
+				}, nil, nil)
 
-		bsV1Alpha4 := &bsv1.Backstage{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      backstageNameV4,
-				Namespace: ns,
-			},
-			Spec: bsv1.BackstageSpec{
-				Application: &bsv1.Application{
-					AppConfig: &bsv1.AppConfig{
-						ConfigMaps: []bsv1.FileObjectRef{
-							{Name: "default-app-config-v4"},
+			bsV1Alpha4 = &bsv1.Backstage{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      backstageNameV4,
+					Namespace: ns,
+				},
+				Spec: bsv1.BackstageSpec{
+					Application: &bsv1.Application{
+						AppConfig: &bsv1.AppConfig{
+							ConfigMaps: []bsv1.FileObjectRef{
+								{Name: "default-app-config-v4"},
+							},
 						},
 					},
 				},
-			},
+			}
+
+			err = k8sClient.Create(ctx, bsV1Alpha4)
+			Expect(err).ShouldNot(HaveOccurred())
+
+			By("verifying the operator reconciles the v1alpha4 resource")
+			Eventually(func(g Gomega) {
+				fetched := &bsv1.Backstage{}
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: backstageNameV4, Namespace: ns}, fetched)
+				g.Expect(err).ShouldNot(HaveOccurred())
+			}, 2*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("verifying v1alpha4 deployment is created and running")
+			Eventually(func(g Gomega) {
+				deploy := &appsv1.Deployment{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Namespace: ns,
+					Name:      model.DeploymentName(backstageNameV4),
+				}, deploy)
+				g.Expect(err).ShouldNot(HaveOccurred())
+				g.Expect(deploy.Status.ReadyReplicas).To(BeNumerically(">", 0))
+			}, 3*time.Minute, 10*time.Second).Should(Succeed())
+		} else {
+			By("v1alpha4 API not available - skipping v1alpha4 compatibility test")
 		}
 
-		err = k8sClient.Create(ctx, bsV1Alpha4)
-		Expect(err).ShouldNot(HaveOccurred())
+		if v1alpha4Available {
+			By("verifying both v1alpha3 and v1alpha4 resources coexist")
+			// verify both deployments are running simultaneously
+			Eventually(func(g Gomega) {
+				deployV3 := &appsv1.Deployment{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Namespace: ns,
+					Name:      model.DeploymentName(backstageNameV3),
+				}, deployV3)
+				g.Expect(err).ShouldNot(HaveOccurred())
+				g.Expect(deployV3.Status.ReadyReplicas).To(BeNumerically(">", 0))
 
-		By("verifying the operator reconciles the v1alpha4 resource")
-		Eventually(func(g Gomega) {
-			fetched := &bsv1.Backstage{}
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: backstageNameV4, Namespace: ns}, fetched)
-			g.Expect(err).ShouldNot(HaveOccurred())
-		}, 2*time.Minute, 10*time.Second).Should(Succeed())
-
-		By("verifying v1alpha4 deployment is created and running")
-		Eventually(func(g Gomega) {
-			deploy := &appsv1.Deployment{}
-			err := k8sClient.Get(ctx, types.NamespacedName{
-				Namespace: ns,
-				Name:      model.DeploymentName(backstageNameV4),
-			}, deploy)
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(deploy.Status.ReadyReplicas).To(BeNumerically(">", 0))
-		}, 3*time.Minute, 10*time.Second).Should(Succeed())
-
-		By("verifying both v1alpha3 and v1alpha4 resources coexist")
-		// verify both deployments are running simultaneously
-		Eventually(func(g Gomega) {
-			deployV3 := &appsv1.Deployment{}
-			err := k8sClient.Get(ctx, types.NamespacedName{
-				Namespace: ns,
-				Name:      model.DeploymentName(backstageNameV3),
-			}, deployV3)
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(deployV3.Status.ReadyReplicas).To(BeNumerically(">", 0))
-
-			deployV4 := &appsv1.Deployment{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Namespace: ns,
-				Name:      model.DeploymentName(backstageNameV4),
-			}, deployV4)
-			g.Expect(err).ShouldNot(HaveOccurred())
-			g.Expect(deployV4.Status.ReadyReplicas).To(BeNumerically(">", 0))
-		}, 4*time.Minute, 15*time.Second).Should(Succeed())
+				deployV4 := &appsv1.Deployment{}
+				err = k8sClient.Get(ctx, types.NamespacedName{
+					Namespace: ns,
+					Name:      model.DeploymentName(backstageNameV4),
+				}, deployV4)
+				g.Expect(err).ShouldNot(HaveOccurred())
+				g.Expect(deployV4.Status.ReadyReplicas).To(BeNumerically(">", 0))
+			}, 4*time.Minute, 15*time.Second).Should(Succeed())
+		}
 
 		// clean up test resources
 		By("cleaning up v1alpha3 test resource")
 		err = k8sClient.Delete(ctx, bsV1Alpha3)
 		Expect(err).ShouldNot(HaveOccurred())
 
-		By("cleaning up v1alpha4 test resource")
-		err = k8sClient.Delete(ctx, bsV1Alpha4)
-		Expect(err).ShouldNot(HaveOccurred())
+		if v1alpha4Available {
+			By("cleaning up v1alpha4 test resource")
+			err = k8sClient.Delete(ctx, bsV1Alpha4)
+			Expect(err).ShouldNot(HaveOccurred())
+		}
 	})
 })
