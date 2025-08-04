@@ -60,6 +60,10 @@ spec:
               value: /opt/app-root/src/.npmrc.dynamic-plugins/.npmrc
             - name: MAX_ENTRY_SIZE
               value: "30000000"
+            - name: NPM_CONFIG_TIMEOUT
+              value: "600000"
+            - name: NPM_CONFIG_NETWORK_TIMEOUT
+              value: "600000"
           volumeMounts:
             - mountPath: /dynamic-plugins-root
               name: dynamic-plugins-root
@@ -73,13 +77,13 @@ spec:
               name: temp
           workingDir: /opt/app-root/src
           resources:
-            requests:
-              cpu: 250m
-              memory: 256Mi
-            limits:
-              cpu: 1000m
-              memory: 2.5Gi
-              ephemeral-storage: 5Gi
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+                limits:
+                  cpu: 1000m
+                  memory: 2.5Gi
+                  ephemeral-storage: 5Gi
       containers:
         - name: backstage-backend
           # image will be replaced by the value of the `RELATED_IMAGE_backstage` env var, if set
@@ -99,16 +103,16 @@ spec:
             readOnlyRootFilesystem: true
           startupProbe:
             # This gives enough time upon container startup before the liveness and readiness probes are triggered.
-            # Giving (120s = initialDelaySeconds + failureThreshold * periodSeconds) to account for the worst case scenario.
+            # Giving (300s = initialDelaySeconds + failureThreshold * periodSeconds) to account for the worst case scenario.
             httpGet:
               path: /.backstage/health/v1/liveness
               port: backend
               scheme: HTTP
             initialDelaySeconds: 30
-            timeoutSeconds: 4
-            periodSeconds: 20
+            timeoutSeconds: 10
+            periodSeconds: 30
             successThreshold: 1
-            failureThreshold: 3
+            failureThreshold: 9
           readinessProbe:
             failureThreshold: 3
             httpGet:
@@ -151,7 +155,7 @@ spec:
           resources:
             requests:
               cpu: 250m
-              memory: 256Mi
+              memory: 512Mi
             limits:
               cpu: 1000m
               memory: 2.5Gi
