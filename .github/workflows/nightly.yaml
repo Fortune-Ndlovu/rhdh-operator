@@ -40,18 +40,10 @@ jobs:
           OPERATOR_MANIFEST="${{ github.workspace }}/${distLocation}"
           proto="file://"
           
-          # Handle test branches - map them to their base branches for manifest lookup
+          # Handle test branches - use local build for all test branches
           if [[ "${branch}" == "test-"* ]]; then
-            if [[ "${branch}" == "test-main" ]]; then
-              # Use main branch manifest for integration tests
-              OPERATOR_MANIFEST="${{ github.workspace }}/${distLocation}"
-            elif [[ "${branch}" == "test-release-1.7" ]]; then
-              # Use release-1.7 manifest for E2E tests
-              OPERATOR_MANIFEST="${{ github.workspace }}/tests/e2e/testdata/rhdh-operator-1.7.yaml"
-            elif [[ "${branch}" == "test-release-1.6" ]]; then
-              # Use release-1.6 manifest for unit tests
-              OPERATOR_MANIFEST="${{ github.workspace }}/tests/e2e/testdata/rhdh-operator-1.6.yaml"
-            fi
+            # Use local build manifest for all test branches
+            OPERATOR_MANIFEST="${{ github.workspace }}/${distLocation}"
           elif [[ "${branch}" != "main" ]]; then
             version="${branch#release-}"
             major=$(echo $version | cut -d. -f1)
