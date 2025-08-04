@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/redhat-developer/rhdh-operator/pkg/model"
 
@@ -185,6 +186,9 @@ func VerifyBackstageAppAccessWithUrlProvider(g Gomega, baseUrlProvider func(g Go
 	if cancelFunc != nil {
 		defer cancelFunc()
 	}
+	// Add a small delay to allow the application to fully start up
+	fmt.Fprintf(GinkgoWriter, "Waiting a moment for application startup before testing access...\n")
+	time.Sleep(30 * time.Second)
 	VerifyBackstageAppAccess(g, appUrl, tests)
 }
 
@@ -219,6 +223,13 @@ func VerifyBackstageAppAccess(g Gomega, baseUrl string, tests []ApiEndpointTest)
 		body, rErr := io.ReadAll(resp.Body)
 		g.Expect(rErr).ShouldNot(HaveOccurred(), fmt.Sprintf("error while trying to read response body from 'GET %q'", url))
 		bodyStr := string(body)
+		
+		// Add debugging for 503 errors to help troubleshoot application startup issues
+		if resp.StatusCode == 503 {
+			fmt.Fprintf(GinkgoWriter, "503 Service Unavailable for %q - this might indicate the application is still starting up\n", url)
+			fmt.Fprintf(GinkgoWriter, "Response body: %s\n", bodyStr)
+		}
+		
 		g.Expect(resp.StatusCode).Should(Equal(tt.ExpectedHttpStatusCode), fmt.Sprintf("context: %s\n===Response body===\n%s", tt.Endpoint, bodyStr))
 		if tt.BodyMatcher != nil {
 			g.Expect(bodyStr).Should(tt.BodyMatcher, "context: "+tt.Endpoint)
