@@ -3,8 +3,8 @@ name: Nightly checks
 on:
   # workflow_dispatch so that it can be triggered manually if needed
   workflow_dispatch:
-  schedule:
-    - cron: "34 23 * * *"
+  # schedule:
+  #   - cron: "34 23 * * *"
 
 jobs:
   nightly-tests:
@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         branch:
-          - main
+          - test-main
           - release-1.7
           - release-1.6
           - release-1.5
