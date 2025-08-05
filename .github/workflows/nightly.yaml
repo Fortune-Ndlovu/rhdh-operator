@@ -57,9 +57,9 @@ jobs:
           fi
           echo "OPERATOR_MANIFEST=${OPERATOR_MANIFEST}" >> $GITHUB_ENV
           
-          # For test branches, use a default image to avoid curl failures
+          # For test branches, use make show-img to get the correct image name
           if [[ "${branch}" == "test-"* ]]; then
-            OPERATOR_IMAGE="quay.io/rhdh/rhdh-operator:latest"
+            OPERATOR_IMAGE=$(make show-img)
           else
             OPERATOR_IMAGE=$(curl -s "${proto}${OPERATOR_MANIFEST}" | yq 'select(.kind == "Deployment" and .metadata.labels.app == "rhdh-operator") | .spec.template.spec.containers[0].image')
           fi
