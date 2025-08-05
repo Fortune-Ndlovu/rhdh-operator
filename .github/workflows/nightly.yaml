@@ -57,9 +57,11 @@ jobs:
           fi
           echo "OPERATOR_MANIFEST=${OPERATOR_MANIFEST}" >> $GITHUB_ENV
           
-          # For test branches, use make show-img to get the correct image name
+          # For test branches, use explicit image name based on branch version
           if [[ "${branch}" == "test-"* ]]; then
-            OPERATOR_IMAGE=$(make show-img)
+            # Extract version from branch name: test-release-1.6 -> 1.6
+            branch_version="${branch#test-release-}"
+            OPERATOR_IMAGE="quay.io/rhdh/rhdh-rhel9-operator:${branch_version}"
           else
             OPERATOR_IMAGE=$(curl -s "${proto}${OPERATOR_MANIFEST}" | yq 'select(.kind == "Deployment" and .metadata.labels.app == "rhdh-operator") | .spec.template.spec.containers[0].image')
           fi
