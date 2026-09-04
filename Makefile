@@ -11,8 +11,7 @@ PROFILE ?= rhdh
 # Enable operator dynamic plugins processing (default: true)
 OPERATOR_DP_PROCESSING ?= true
 # Install dynamic plugins image (required when OPERATOR_DP_PROCESSING=true)
-# INSTALL_DP_IMAGE ?= quay.io/rhdh-community/plugin-installer:next
-INSTALL_DP_IMAGE ?= quay.io/gazarenk/rhdh-plugin-installer:next
+INSTALL_DP_IMAGE ?= quay.io/rhdh-community/rhdh-plugin-installer:next
 PROFILE_SHORT := $(shell echo $(PROFILE) | cut -d. -f1)
 
 # VERSION defines the project version for the bundle.
@@ -166,7 +165,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 
 .PHONY: fmt
 fmt: goimports ## Format the code using goimports
-	find . -not -path '*/\.*' -name '*.go' -exec $(GOIMPORTS) -w {} \;
+	find . -not -path '*/\.*' -not -name 'zz_generated.*' -name '*.go' -exec $(GOIMPORTS) -w {} \;
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest $(LOCALBIN) ## Run tests. We need LOCALBIN=$(LOCALBIN) to get correct default-config path
@@ -226,6 +225,20 @@ validate-image-digests: ## Validate that Dockerfile digests are manifest lists (
 	@echo "Validating manifest list digests in Dockerfiles..."
 	@echo
 	@hack/validate-image-digests.sh
+
+CRD_BASELINE_REF ?= main
+
+.PHONY: crd-upgrade-check
+crd-upgrade-check: crdify kustomize ## Check CRD upgrade safety against the base branch.
+	@echo "Checking CRD upgrade safety: $(CRD_BASELINE_REF) -> current working tree"
+	@tmpdir=$$(mktemp -d); \
+	set -e; \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	$(KUSTOMIZE) build config/crd > "$$tmpdir/current.yaml"; \
+	mkdir -p "$$tmpdir/baseline"; \
+	git archive "$(CRD_BASELINE_REF)" config/crd | tar -x -C "$$tmpdir/baseline"; \
+	$(KUSTOMIZE) build "$$tmpdir/baseline/config/crd" > "$$tmpdir/baseline.yaml"; \
+	$(CRDIFY) "file://$$tmpdir/baseline.yaml" "file://$$tmpdir/current.yaml"
 
 ##@ Build
 
@@ -531,6 +544,7 @@ GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 GOIMPORTS ?= $(LOCALBIN)/goimports
 GOSEC ?= $(LOCALBIN)/gosec
 GINKGO ?= $(LOCALBIN)/ginkgo
+CRDIFY ?= $(LOCALBIN)/crdify
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
@@ -540,6 +554,7 @@ GOLANGCI_LINT_VERSION ?= v2.12.2
 GOIMPORTS_VERSION ?= v0.46.0
 GOSEC_VERSION ?= v2.27.1
 GINKGO_VERSION ?= v2.28.1
+CRDIFY_VERSION ?= v0.6.0
 
 ## Gosec options - default format is sarif so we can integrate with Github code scanning
 GOSEC_FMT ?= sarif  # for other options, see https://github.com/securego/gosec#output-formats
@@ -587,6 +602,11 @@ $(GOSEC): $(LOCALBIN)
 ginkgo: $(GINKGO) ## Download Ginkgo locally if necessary.
 $(GINKGO): $(LOCALBIN)
 	$(call go-install-tool,$(GINKGO),github.com/onsi/ginkgo/v2/ginkgo,$(GINKGO_VERSION))
+
+.PHONY: crdify
+crdify: $(CRDIFY) ## Download crdify locally if necessary.
+$(CRDIFY): $(LOCALBIN)
+	$(call go-install-tool,$(CRDIFY),sigs.k8s.io/crdify,$(CRDIFY_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary (ideally with version)

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Sync vendored Lightspeed config snippets from upstream.
+# Sync vendored Lightspeed Core config snippets from upstream.
 #
 
 set -euo pipefail
 
-UPSTREAM_REPO="redhat-ai-dev/lightspeed-configs"
+UPSTREAM_REPO="redhat-developer/rhdh-intelligent-assistant-configs"
 UPSTREAM_CONFIG_PATH="llama-stack-configs/config.yaml"
 UPSTREAM_STACK_PATH="lightspeed-core-configs/lightspeed-stack.yaml"
 UPSTREAM_PROFILE_PATH="lightspeed-core-configs/rhdh-profile.py"
@@ -14,8 +14,8 @@ UPSTREAM_ENV_PATH="env/default-values.env"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-CONFIGMAP_FILE="${REPO_ROOT}/config/profile/rhdh/default-config/flavours/lightspeed/configmap-files.yaml"
-EXAMPLE_SECRET_FILE="${REPO_ROOT}/examples/lightspeed.yaml"
+CONFIGMAP_FILE="${REPO_ROOT}/config/profile/rhdh/default-config/flavours/intelligent-assistant/configmap-files.yaml"
+EXAMPLE_SECRET_FILE="${REPO_ROOT}/examples/intelligent-assistant.yaml"
 
 REF="main"
 UPDATED=0
@@ -24,7 +24,7 @@ TMP_DIR=""
 usage() {
     cat <<'EOF'
 Usage:
-  ./hack/sync-lightspeed-configs.sh [--ref <branch-or-tag>]
+  ./hack/sync-lightspeed-configs.sh [--repo <repo>] [--ref <branch-or-tag>]
 EOF
 }
 
@@ -33,6 +33,10 @@ parse_args() {
         case "$1" in
             --ref)
                 REF="$2"
+                shift 2
+                ;;
+            --repo)
+                UPSTREAM_REPO="$2"
                 shift 2
                 ;;
             -h|--help)
