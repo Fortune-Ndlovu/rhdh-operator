@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
 	"github.com/redhat-developer/rhdh-operator/api"
@@ -54,11 +55,13 @@ type DynaPluginsConfig struct {
 	Plugins  []DynaPlugin `yaml:"plugins,omitempty"`
 }
 
+// DynaPlugin represents a dynamic plugin entry. Disabled is deprecated; nil
+// means the legacy key was not supplied in YAML.
 type DynaPlugin struct {
 	Package      string                 `yaml:"package,omitempty"`
 	Integrity    string                 `yaml:"integrity,omitempty"`
 	Enabled      *bool                  `yaml:"enabled,omitempty"`
-	Disabled     bool                   `yaml:"disabled"`
+	Disabled     *bool                  `yaml:"disabled,omitempty"`
 	PluginConfig map[string]interface{} `yaml:"pluginConfig,omitempty"`
 	Dependencies []PluginDependency     `yaml:"dependencies,omitempty"`
 }
@@ -168,6 +171,11 @@ func (p *DynamicPlugins) addToModel(model *BackstageModel, backstage api.Backsta
 				if strings.HasPrefix(plugin.Package, "./") || strings.HasPrefix(plugin.Package, "/") {
 					continue
 				}
+				// Warn if package name contains "!plugin-path" syntax (multi-plugin package)
+				if idx := strings.Index(plugin.Package, "!"); idx != -1 {
+					klog.Warningf("package %q contains '!plugin-path' syntax", plugin.Package)
+				}
+
 				p.enabledPlugins = append(p.enabledPlugins, plugin)
 				// Build package entry: "url integrity"
 				// Integrity is respected for HTTP and npm packages, ignored for OCI
@@ -248,7 +256,7 @@ func (p DynaPlugin) IsDisabled() bool {
 	if p.Enabled != nil {
 		return !*p.Enabled
 	}
-	return p.Disabled
+	return p.Disabled != nil && *p.Disabled
 }
 
 // Dependencies returns a list of plugin dependencies
@@ -413,13 +421,18 @@ func MergePluginsData(firstData, secondData string) (string, error) {
 			}
 			if plugin.Enabled != nil {
 				existingPlugin.Enabled = plugin.Enabled
-			} else if plugin.Disabled {
-				existingPlugin.Disabled = true
+				// Drop a deprecated key inherited from the base, but preserve
+				// one explicitly declared alongside enabled in the overlay.
+				existingPlugin.Disabled = plugin.Disabled
+			} else if plugin.Disabled != nil {
+				// Preserve an explicitly supplied disabled value, including false.
+				existingPlugin.Disabled = plugin.Disabled
 				existingPlugin.Enabled = nil
 			} else {
 				// User added this plugin to overlay without specifying enabled/disabled
 				// Default to enabled
 				existingPlugin.Enabled = ptr.To(true)
+				existingPlugin.Disabled = nil
 			}
 			pluginMap[plugin.Package] = existingPlugin
 		} else {
