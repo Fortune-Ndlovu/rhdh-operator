@@ -15,13 +15,16 @@ env:
   # Update this checksum when OPM_VERSION changes (sha256 of linux-amd64-opm from checksums.txt)
   OPM_SHA256: b81b337baf851698a96b70fc5d419b6f239a8856c4f598df65b225d56c39fff6
   # OLM catalog constants (must match the rhdh profile in the Makefile)
+  # DEFAULT_CHANNEL is computed dynamically from the version in the "Load and validate metadata" step
   BUNDLE_METADATA_PACKAGE_NAME: rhdh
-  DEFAULT_CHANNEL: fast
   PROFILE_SHORT: rhdh
 
 concurrency:
+  # Keyed on the PR head repo + branch. Do not add workflow_run.pull_requests
+  # here: it is empty for fork PRs, which would make the group unique per run
+  # and cancel-in-progress a no-op for exactly them.
   group: >-
-    ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.id }}
+    ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 jobs:
@@ -113,7 +116,7 @@ jobs:
 
       - name: Download artifact from build workflow
         if: steps.check-artifact.outputs.exists == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: pr-images
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -174,6 +177,7 @@ jobs:
           echo "SAFE_SHORT_SHA=${TRUSTED_SHORT_SHA}" >> "$GITHUB_ENV"
           echo "SAFE_FULL_TAG=${FULL_TAG}" >> "$GITHUB_ENV"
           echo "SAFE_ALIAS_TAG=${ALIAS_TAG}" >> "$GITHUB_ENV"
+          echo "DEFAULT_CHANNEL=fast-$(echo "${BASE_VERSION}" | cut -d. -f1,2)" >> "$GITHUB_ENV"
           echo "EXPIRATION_TIMESTAMP=$(date -u -d '+7 days' +%s)" >> "$GITHUB_ENV"
 
       - name: Load operator image
@@ -190,7 +194,7 @@ jobs:
 
       - name: Login to registry (${{ vars.REGISTRY || 'quay.io' }})
         if: steps.check-artifact.outputs.exists == 'true' && steps.meta.outputs.skip != 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ vars.QUAY_USERNAME }}

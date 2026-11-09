@@ -230,6 +230,7 @@ For example, Backstage CR named **mybackstage** will create K8s Deployment resou
     - DB-scoped policies are filtered out when `spec.database.enableLocalDb` is `false`
     - When local DB is disabled, the `allow-psql-egress` policy allows egress on port 5432 to any destination (for external databases)
     - The `allow-redis-egress` policy allows egress on port 6379 TCP to any destination (Redis is not deployed by the operator; users bring their own)
+    - The `allow-https-egress` policy also allows egress on port 6443 TCP (Kubernetes API server) — needed by plugins that query cluster resources (Tekton, ArgoCD/GitOps, Topology, KServe model catalog, etc.). On some managed platforms (GKE, EKS) the API server listens on port 443 instead.
     - The `allow-metrics-ingress` policy allows ingress on port 9464 from `openshift-monitoring`, `openshift-user-workload-monitoring`, GKE GMP namespaces (`gmp-system`, `gke-gmp-system`), and `monitoring` (kube-prometheus-stack convention)
     - On OpenShift, the `allow-router-ingress` policy's `namespaceSelector` is set to `policy-group.network.openshift.io/ingress: ""`
 
@@ -772,6 +773,8 @@ Each plugin can be configured with the following fields:
 - `integrity` (optional): Integrity checksum for the plugin package.
 - `includes` (optional, ConfigMap only): Array of local dynamic plugin files to include (e.g., `dynamic-plugins.default.yaml`). Only supported in init container processing mode. Not supported when using operator-processed dynamic plugins (`OPERATOR_DP_PROCESSING=true`).
 
+**Note:** The legacy per-plugin `disabled` key in `dynamic-plugins.yaml` remains supported but is deprecated. Use `enabled` for new or updated entries.
+
 **Configuration Options:**
 
 There are two mutually exclusive ways to configure Dynamic Plugins in the Backstage CR:
@@ -1130,3 +1133,5 @@ If local DB is enabled (which is simpler but not recommended for production), th
 If local DB is disabled (`enableLocalDb: false`), then the secret with DB connection information must be created manually and specified in either **spec.database.authSecretName** or one of **spec.application.extraEnvs.secrets**.
   
 For more information, refer to the [External DB Integration](external-db.md) manual.
+
+To upgrade the local PostgreSQL database or move its data to an external server, see [Local database migration](db_migration.md).

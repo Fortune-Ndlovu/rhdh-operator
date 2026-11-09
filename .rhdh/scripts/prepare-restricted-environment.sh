@@ -918,8 +918,6 @@ function render_index() {
       "$YQ" 'select(
           (.schema == "olm.package" and .name == "'${prod_operator_package_name}'")
           or
-          (.schema == "olm.channel" and .package == "'${prod_operator_package_name}'" and .name == "fast")
-          or
           '"$chanFilterList"'
           or
           '"$bundleFilterList"'
@@ -1545,7 +1543,6 @@ EOF
     if [[ "${NO_VERSION_FILTER}" != "true" ]]; then
       cat <<EOF >>"${TMPDIR}/imageset-config.yaml"
         channels:
-          - name: fast
 EOF
       for v in "${FILTERED_VERSIONS[@]}"; do
         cat <<EOF >>"${TMPDIR}/imageset-config.yaml"
@@ -1958,6 +1955,16 @@ if [[ -z "${TO_REGISTRY}" ]] && [[ "${OLM_VERSION}" == "auto" ]]; then
   infof "Generating both OLM v0 and v1 manifest templates for export."
 fi
 
+# Compute the OLM channel for generated manifests
+if [[ "${NO_VERSION_FILTER}" != "true" && ${#FILTERED_VERSIONS[@]} -gt 0 && "${FILTERED_VERSIONS[0]}" != "*" ]]; then
+  OLM_CHANNEL_NAME="fast-${FILTERED_VERSIONS[-1]}"
+elif [[ -n "${CI_X_VERSION:-}" && -n "${CI_Y_VERSION:-}" ]]; then
+  OLM_CHANNEL_NAME="fast-${CI_X_VERSION}.${CI_Y_VERSION}"
+else
+  OLM_CHANNEL_NAME=""
+  warnf "OLM channel could not be determined. The catalog's defaultChannel will be used."
+fi
+
 if should_generate_v1_manifests; then
   # shellcheck disable=SC2016
   SA_NAME='${SA_NAME}'
@@ -2003,7 +2010,7 @@ rules:
   resources: ["configmaps", "persistentvolumeclaims", "secrets", "services"]
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
 - apiGroups: [""]
-  resources: ["persistentvolumes"]
+  resources: ["persistentvolumes", "pods"]
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
   resources: ["events"]
@@ -2017,8 +2024,8 @@ rules:
   verbs: ["create", "delete", "patch", "update"]
 # Operator runtime: OpenShift
 - apiGroups: ["config.openshift.io"]
-  resources: ["ingresses"]
-  verbs: ["get"]
+  resources: ["apiservers", "ingresses"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["route.openshift.io"]
   resources: ["routes", "routes/custom-host"]
   verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
@@ -2034,8 +2041,11 @@ rules:
   resources: ["backstages/finalizers"]
   verbs: ["update"]
 - apiGroups: ["rhdh.redhat.com"]
-  resources: ["backstages/status"]
+  resources: ["backstages/status", "devhubplugincatalogs/status"]
   verbs: ["get", "patch", "update"]
+- apiGroups: ["rhdh.redhat.com"]
+  resources: ["devhubplugincatalogs"]
+  verbs: ["get", "list", "watch"]
 # Operator runtime: plugin integrations
 - apiGroups: ["sonataflow.org"]
   resources: ["sonataflowplatforms", "sonataflows"]
@@ -2099,9 +2109,9 @@ spec:
   source:
     sourceType: Catalog
     catalog:
-      packageName: rhdh
+      packageName: rhdh$(if [[ -n "${OLM_CHANNEL_NAME}" ]]; then echo "
       channels:
-      - fast
+      - ${OLM_CHANNEL_NAME}"; fi)
       selector:
         matchLabels:
           olm.operatorframework.io/metadata.name: ${TARGET_CATALOG}
@@ -2124,7 +2134,7 @@ metadata:
   name: rhdh-operator
   namespace: ${NAMESPACE_OPERATOR}
 spec:
-  channel: fast
+$(if [[ -n "${OLM_CHANNEL_NAME}" ]]; then echo "  channel: ${OLM_CHANNEL_NAME}"; fi)
   installPlanApproval: Automatic
   name: rhdh
   source: ${TARGET_CATALOG}

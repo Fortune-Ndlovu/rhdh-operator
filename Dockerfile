@@ -3,12 +3,13 @@
 
 #@follow_tag(registry.redhat.io/rhel10/go-toolset:latest)
 # https://registry.access.redhat.com/ubi10/go-toolset
-FROM registry.access.redhat.com/ubi10/go-toolset:10.2-1790644709@sha256:290ba654458e9a269b1509d10e6ebbd3c2b2456570e73e73201adb3ee54fb244 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:10.2-1793908205@sha256:cb712e78c45e429142e846c1b8b91894970eab3b66fd5a95d336b65b4f7bb877 AS builder
 ARG TARGETOS
 ARG TARGETARCH
-# hadolint ignore=DL3002
-USER 0
+# Build as the go-toolset default user (non-root). Hermeto prefetch must chmod the
+# /cachi2 cache (see hack/local-hermeto-build.sh and CI) so this user can use gomod offline.
 ENV GOPATH=/go/
+ENV GOCACHE=/tmp/go-build-cache
 
 ENV EXTERNAL_SOURCE=.
 ENV CONTAINER_SOURCE=/opt/app-root/src
@@ -34,7 +35,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o ma
 # Install openssl for FIPS support into an isolated rootfs
 #@follow_tag(registry.redhat.io/ubi10/ubi:latest)
 # https://registry.access.redhat.com/ubi10/ubi
-FROM registry.access.redhat.com/ubi10/ubi:10.2-1790753515@sha256:ef337e7f358efbd37b5b797b364e54b130372cf0fb1e919fb462c7106f3ce100 AS rpm-builder
+FROM registry.access.redhat.com/ubi10/ubi:10.2-1793860810@sha256:0e8ccad7d35f5fd756f4f2202f018b8d3c3e8bb9af8e627d874239381a00ab41 AS rpm-builder
 RUN mkdir -p /mnt/rootfs
 RUN dnf install --installroot /mnt/rootfs \
     openssl \
@@ -46,7 +47,7 @@ RUN echo "backstage:x:1001:0:backstage user:/:/sbin/nologin" >> /mnt/rootfs/etc/
 # Final minimal image using UBI micro
 #@follow_tag(registry.redhat.io/ubi10/ubi-micro:latest)
 # https://registry.access.redhat.com/ubi10/ubi-micro
-FROM registry.access.redhat.com/ubi10/ubi-micro:10.2-1787684489@sha256:37fadb004c6bea628fcdd81376c8fb77bd8d9fd432d90503af4d9e76b1ff7191
+FROM registry.access.redhat.com/ubi10/ubi-micro:10.2-1793858790@sha256:8488f5ec082768a01d1ce4e0ef3878f782a40ff6d233afa74bc23d4e740620a4
 
 COPY --from=rpm-builder /mnt/rootfs /
 

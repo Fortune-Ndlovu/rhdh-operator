@@ -1,10 +1,14 @@
 # Build stage
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:1.26.7-1790644709@sha256:290ba654458e9a269b1509d10e6ebbd3c2b2456570e73e73201adb3ee54fb244 AS builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:1.26.10-1793622842@sha256:05619897582acb01ee5dd3eaa2934a7cc2f24409a255142a704b734ef07b68a6 AS builder
 
 ARG TARGETOS=linux
 ARG TARGETARCH
 
-WORKDIR /workspace
+# Switch to root for hermetic builds (avoid permission issues)
+USER 0
+
+# Use the default go-toolset workdir (has proper permissions for hermetic builds)
+WORKDIR /opt/app-root/src
 
 # Copy go mod files first for better layer caching
 COPY go.mod go.sum ./
@@ -18,24 +22,22 @@ COPY pkg/ pkg/
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o plugin-fetch ./cmd/plugin-fetch/
 
 # CA certificates stage - install ca-certificates package the Red Hat way
-FROM registry.access.redhat.com/ubi10/ubi:10.2-1790753515@sha256:ef337e7f358efbd37b5b797b364e54b130372cf0fb1e919fb462c7106f3ce100 AS certs
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/ubi:10.2-1793697573@sha256:b0a29d36a12733acd937b3f857678539d7ce2dab63bd048cfae8685247b4365c AS certs
 
-RUN mkdir -p /mnt/rootfs && \
-    dnf install --installroot /mnt/rootfs ca-certificates \
-        --releasever 9 --setopt=install_weak_deps=0 --nodocs -y && \
-    dnf --installroot /mnt/rootfs clean all && \
-    rm -rf /mnt/rootfs/var/cache/* /mnt/rootfs/var/log/* /mnt/rootfs/tmp/*
+RUN dnf install ca-certificates --releasever 10 --setopt=install_weak_deps=0 --nogpgcheck --nodocs -y && \
+    dnf clean all && \
+    rm -rf /var/cache/* /var/log/*
 
 # Runtime stage - minimal image
-FROM registry.access.redhat.com/ubi10/ubi-micro:10.2-1787684489@sha256:37fadb004c6bea628fcdd81376c8fb77bd8d9fd432d90503af4d9e76b1ff7191
+FROM registry.access.redhat.com/ubi10/ubi-micro:10.2-1792455530@sha256:1c105e547de5d9e0bc20d06ebabee73b20bc6bba994c50ae3e207684fd8bef2b
 
 WORKDIR /
 
 # Copy CA certificates from certs stage
-COPY --from=certs /mnt/rootfs/etc/pki /etc/pki
+COPY --from=certs /etc/pki /etc/pki
 
 # Copy binary from builder
-COPY --from=builder /workspace/plugin-fetch /usr/local/bin/plugin-fetch
+COPY --from=builder /opt/app-root/src/plugin-fetch /usr/local/bin/plugin-fetch
 
 # Default environment variables
 ENV INPUT_FILE=/input/packages.txt \

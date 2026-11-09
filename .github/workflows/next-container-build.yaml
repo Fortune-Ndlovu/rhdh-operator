@@ -102,7 +102,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Login to registry (${{ env.REGISTRY }})
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ vars.QUAY_USERNAME }}
@@ -122,7 +122,10 @@ jobs:
           : "${LATEST_NEXT:?LATEST_NEXT must be set}"
           : "${OPERATOR_IMAGE_NAME:?OPERATOR_IMAGE_NAME must be set}"
 
-          CONTAINER_TOOL="${CONTAINER_TOOL}" VERSION="${VERSION}" make bundle bundle-build bundle-push
+          export DEFAULT_CHANNEL="fast-$(echo "${VERSION}" | cut -d. -f1,2)"
+          export CHANNELS="fast-$(echo "${VERSION}" | cut -d. -f1,2)"
+
+          CONTAINER_TOOL="${CONTAINER_TOOL}" VERSION="${VERSION}" DEFAULT_CHANNEL="${DEFAULT_CHANNEL}" CHANNELS="${CHANNELS}" make bundle bundle-build bundle-push
 
           for tag in "${VERSION}-${SHORT_SHA}" "${LATEST_NEXT}"; do
             podman tag "${REGISTRY_WITH_ORG}/${OPERATOR_IMAGE_NAME}-bundle:${VERSION}" "${REGISTRY_WITH_ORG}/${OPERATOR_IMAGE_NAME}-bundle:${tag}"
@@ -185,7 +188,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Login to registry (${{ env.REGISTRY }})
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ vars.QUAY_USERNAME }}
@@ -215,8 +218,11 @@ jobs:
           : "${LATEST_NEXT:?LATEST_NEXT must be set}"
           : "${OPERATOR_IMAGE_NAME:?OPERATOR_IMAGE_NAME must be set}"
 
+          export DEFAULT_CHANNEL="fast-$(echo "${VERSION}" | cut -d. -f1,2)"
+          export CHANNELS="fast-$(echo "${VERSION}" | cut -d. -f1,2)"
+
           # Build the catalog image only (operator was built hermetically above)
-          CONTAINER_TOOL="${CONTAINER_TOOL}" VERSION="${VERSION}" PLATFORM="${PLATFORM}" BUNDLE_IMGS="${BUNDLE_IMGS}" make -o bundle-push catalog-build
+          CONTAINER_TOOL="${CONTAINER_TOOL}" VERSION="${VERSION}" PLATFORM="${PLATFORM}" BUNDLE_IMGS="${BUNDLE_IMGS}" DEFAULT_CHANNEL="${DEFAULT_CHANNEL}" CHANNELS="${CHANNELS}" make -o bundle-push catalog-build
 
           # Push per-arch tagged images
           for image in "${OPERATOR_IMAGE_NAME}" "${OPERATOR_IMAGE_NAME}-catalog"; do
@@ -253,7 +259,7 @@ jobs:
       LATEST_NEXT: ${{ needs.changes.outputs.latest_next }}
     steps:
       - name: Login to registry (${{ env.REGISTRY }})
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ vars.QUAY_USERNAME }}
