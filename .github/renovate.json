@@ -5,7 +5,8 @@
     ":rebaseStalePrs",
     "docker:disableMajor",
     "default:pinDigestsDisabled",
-    "helpers:pinGitHubActionDigests"
+    "helpers:pinGitHubActionDigests",
+    "security:gomodIndirectSecurityUpdates"
   ],
   "labels": [
     "kind/dependency upgrade"
@@ -68,6 +69,29 @@
       "matchUpdateTypes": [
         "minor"
       ],
+      "groupName": "All dockerfile images (minor)",
+      "groupSlug": "dockerfile-minor",
+      "matchBaseBranches": [
+        "main",
+        "/^release-1\\.(9|\\d{2,}).*/",
+        "/^release-([2-9]|\\d{2,})\\..*/"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Separate Hermeto image into its own PR to avoid blocking other docker updates",
+      "enabled": true,
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "quay.io/konflux-ci/hermeto"
+      ],
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "groupName": "hermeto",
+      "groupSlug": "hermeto",
       "matchBaseBranches": [
         "main",
         "/^release-1\\.(9|\\d{2,}).*/",
@@ -135,6 +159,13 @@
       ],
       "matchCurrentVersion": "!/^0/",
       "automerge": true
+    },
+    {
+      "description": "Disable routine updates for indirect Go deps; vulnerability alerts handle CVE-only updates separately",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["indirect"],
+      "matchUpdateTypes": ["major", "minor", "patch", "pin", "pinDigest", "digest", "lockFileMaintenance", "rollback", "replacement", "bump"],
+      "enabled": false
     }
   ],
   "vulnerabilityAlerts": {
@@ -153,6 +184,14 @@
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/.github/workflows/update-rpm-lockfile.yaml/"],
+      "matchStrings": [
+        "# renovate: datasource=github-releases depName=(?<depName>\\S+)\\n\\s+RPM_LOCKFILE_PROTOTYPE_VERSION:\\s*(?<currentValue>v\\S+)"
+      ],
+      "datasourceTemplate": "github-releases"
     }
   ]
 }
